@@ -45,10 +45,10 @@ static int reverse(struct Node** headRef)
     struct Word* next = NULL;
 
     struct Node* nodeCurrent = *headRef;
+    printf("node current is %p\n", nodeCurrent);
     struct Node* nodePrev = NULL;
     struct Node* nodeNext = NULL;
 
-    printList(nodeCurrent->arg_list);
     do{
         printf("first\n");
         while (current != NULL){
@@ -67,10 +67,16 @@ static int reverse(struct Node** headRef)
         printf("second\n");
         nodeCurrent->count = count;
         nodeNext = nodeCurrent->next;
+        printf("node next is %p\n", nodeNext);
         printf("third\n");
         nodeCurrent->arg_list = prev;
+        prev = NULL;
         printList(nodeCurrent->arg_list);
-        nodeCurrent = nodeNext;
+        if(nodeNext != NULL){
+            nodeCurrent = nodeNext;
+        } else {
+            return count;
+        }
         printf("fourth\n");
         current = nodeCurrent->arg_list;
         printf("fifth\n");
@@ -102,8 +108,8 @@ void printList(struct Word *head)
   printf("\n");
 }
 
-void Executer(struct Node * node, int count){
-
+void Executer(struct Node * node){
+    int count = node->count;
     char ** myArgv;
     myArgv = calloc((count + 2), sizeof(char*));
     myArgv[0] = strdup(node->command);
@@ -231,6 +237,8 @@ int main (int argc, char * argv[]){
                         } else {
                             printf("Redirection error\n");
                         }
+                        // assign the next pointer to the last node
+                        node->next = newNode;
                         node = newNode;
                         beginningOfCommand = false;
                         rdIn = false;
@@ -440,7 +448,7 @@ int main (int argc, char * argv[]){
         if(myError == false){
             int count = 0;
             count = reverse(&head);
-            Executer(head, count);
+            Executer(head);
         }
         //printList(node->arg_list);
 
