@@ -23,7 +23,7 @@ struct Word{
 struct Node{
         struct Node *next, *prev;
         char *command;
-        int num;
+        int count;
         bool background;
         struct Word *arg_list;
         int in, out, err;
@@ -37,26 +37,46 @@ char *tokens[]={ "QUOTE_ERROR", "ERROR_CHAR", "SYSTEM_ERROR",
 
 
 /* Function to reverse the linked list */
-static int reverse(struct Word** headRef)
+static int reverse(struct Node** headRef)
 {
     int count = 0;
     struct Word* prev   = NULL;
-    struct Word* current = *headRef;
+    struct Word* current = (*headRef)->arg_list;
     struct Word* next = NULL;
-    while (current != NULL)
-    {
-        count++;
-        // Store next
-        next  = current->next;
 
-        // Reverse current node's pointer
-        current->next = prev;
+    struct Node* nodeCurrent = *headRef;
+    struct Node* nodePrev = NULL;
+    struct Node* nodeNext = NULL;
 
-        // Move pointers one position ahead.
-        prev = current;
-        current = next;
-    }
-    *headRef = prev;
+    printList(nodeCurrent->arg_list);
+    do{
+        printf("first\n");
+        while (current != NULL){
+            count++;
+            // Store next
+            next  = current->next;
+
+            // Reverse current node's pointer
+            current->next = prev;
+
+            // Move pointers one position ahead.
+            prev = current;
+            current = next;
+        }
+
+        printf("second\n");
+        nodeCurrent->count = count;
+        nodeNext = nodeCurrent->next;
+        printf("third\n");
+        nodeCurrent->arg_list = prev;
+        printList(nodeCurrent->arg_list);
+        nodeCurrent = nodeNext;
+        printf("fourth\n");
+        current = nodeCurrent->arg_list;
+        printf("fifth\n");
+    } while(nodeCurrent != NULL);
+
+    //(*headRef)->arg_list = prev;
     return count;
 }
 
@@ -85,28 +105,37 @@ void printList(struct Word *head)
 void Executer(struct Node * node, int count){
 
     char ** myArgv;
-    myArgv = calloc((count + 1), sizeof(char*));
+    myArgv = calloc((count + 2), sizeof(char*));
+    myArgv[0] = strdup(node->command);
     struct Word *tmp = node->arg_list;
     for(int i = 0; i < count; i++){
-        myArgv[i] = strdup(tmp->command);
+        myArgv[i + 1] = strdup(tmp->command);
         tmp = tmp->next;
     }
-    if(count == 0){
-        myArgv[0] = strdup(node->command);
-    }
-    //char * file = strdup(node->command);
     int status;
     pid_t childWait;
     pid_t myExec;
     pid_t frtn = fork();
     if(frtn == 0){
         // child process
-        sleep(3);
+        //sleep(2);
         myExec = execvp(node->command, myArgv);
-        exit(myExec);
+        if(myExec == -1){
+            printf("%s: command not found\n",node->command);
+        }
+        //exit(frtn);
     } else if (frtn > 0){
-        childWait = waitpid(myExec, &status, 0);
+        if(node->background == true){
+            childWait = waitpid(frtn, &status, WNOHANG);
+            if(childWait == -1){
+                perror("waitpid");
+            }
+        } else {
+            childWait = waitpid(frtn, &status, 0);
+        }
         // parent process
+    } else if(frtn == -1){
+        perror("fork");
     }
     while(tmp != NULL){
         printf("argument is: %s\n", tmp->command);
@@ -122,13 +151,6 @@ void Executer(struct Node * node, int count){
         printf("error file is: %s\n",node->errFile);
     }
 }
-
-//////////////////////////////////////////////////////////////////////////////////
-//// getting a weird QUOTE_ERROR return when i use an "&" without a ";" after ////
-//////////////////////////////////////////////////////////////////////////////////
-
-//TODO: get forking and execvp-ing working
-
 
 int main (int argc, char * argv[]){
     char buf[256];
@@ -156,7 +178,7 @@ int main (int argc, char * argv[]){
         bool myError = false;
         bool beginningOfCommand = true;
         struct Node *node = (struct Node*) calloc(1, sizeof(struct Node));
-
+        struct Node *head = node;
         while(rtn != EOL){
             switch(rtn){
                 case WORD:
@@ -173,7 +195,7 @@ int main (int argc, char * argv[]){
                     }
                     break;
                 case ERROR_CHAR:
-                    printf("Syntax error\n" );
+                    printf("error char\n" );
                     break;
                 case SYSTEM_ERROR:
                     exit(42);
@@ -184,11 +206,37 @@ int main (int argc, char * argv[]){
                             break;
                             myError = true;
                         }
-                        beginningOfCommand = true;
+                        struct Node *newNode = (struct Node*) calloc(1, sizeof(struct Node));
+                        newNode->prev = node;
+
+                        //assign the input file
+                        if(node->inFile == NULL ){
+                            newNode->inFile = strdup(node->command);
+                        } else {
+                            printf("Redirection error\n");
+                        }
+
+                        // assign the output file
+                        if(node->outFile == NULL ){
+                            // get and assign outFile of the node
+                            rtn = parse_line(NULL);
+                            if(rtn != EOL){
+                                node->outFile = strdup(lexeme);
+                                newNode->command = strdup(lexeme);
+                            } else {
+                                printf("Ambiguous redirection\n");
+                                myError = true;
+                                break;
+                            }
+                        } else {
+                            printf("Redirection error\n");
+                        }
+                        node = newNode;
+                        beginningOfCommand = false;
                         rdIn = false;
                         rdOut = false;
                         rdErr = false;
-                        rdDefined = false;
+                        rdDefined = true;
                     }
                     // if it is a semicolon character
                     else if(strcmp(tokens[rtn %96], "SEMICOLON") == 0){
@@ -356,7 +404,7 @@ int main (int argc, char * argv[]){
                     }
                     // if it is only an opening quote with no close
                     else if (strcmp(tokens[rtn %96], "QUOTE_ERROR") == 0){
-                        printf("Syntax error\n" );
+                        printf("unmatched quote.\n");
                         myError = true;
                         break;
                     }
@@ -378,7 +426,9 @@ int main (int argc, char * argv[]){
                 break;
             }
             //push(&node, lexeme);
-            rtn = parse_line(NULL);
+            if(rtn != EOL){
+                rtn = parse_line(NULL);
+            }
             if(rtn == EOL){
                 if(rdDefined == false){
                     printf("No file defined for redirection\n");
@@ -389,8 +439,8 @@ int main (int argc, char * argv[]){
         }
         if(myError == false){
             int count = 0;
-            count = reverse(&node->arg_list);
-            Executer(node, count);
+            count = reverse(&head);
+            Executer(head, count);
         }
         //printList(node->arg_list);
 
