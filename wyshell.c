@@ -37,24 +37,27 @@ char *tokens[]={ "QUOTE_ERROR", "ERROR_CHAR", "SYSTEM_ERROR",
 
 
 /* Function to reverse the linked list */
-static void reverse(struct Word** headRef)
+static int reverse(struct Word** headRef)
 {
-  struct Word* prev   = NULL;
-  struct Word* current = *headRef;
-  struct Word* next = NULL;
-  while (current != NULL)
-  {
-      // Store next
-      next  = current->next;
+    int count = 0;
+    struct Word* prev   = NULL;
+    struct Word* current = *headRef;
+    struct Word* next = NULL;
+    while (current != NULL)
+    {
+        count++;
+        // Store next
+        next  = current->next;
 
-      // Reverse current node's pointer
-      current->next = prev;
+        // Reverse current node's pointer
+        current->next = prev;
 
-      // Move pointers one position ahead.
-      prev = current;
-      current = next;
-  }
-  *headRef = prev;
+        // Move pointers one position ahead.
+        prev = current;
+        current = next;
+    }
+    *headRef = prev;
+    return count;
 }
 
 /* Function to push a node */
@@ -79,9 +82,32 @@ void printList(struct Word *head)
   printf("\n");
 }
 
-void Executer(struct Node * node){
-    printf("Command is: %s\n", node->command);
+void Executer(struct Node * node, int count){
+
+    char ** myArgv;
+    myArgv = calloc((count + 1), sizeof(char*));
     struct Word *tmp = node->arg_list;
+    for(int i = 0; i < count; i++){
+        myArgv[i] = strdup(tmp->command);
+        tmp = tmp->next;
+    }
+    if(count == 0){
+        myArgv[0] = strdup(node->command);
+    }
+    //char * file = strdup(node->command);
+    int status;
+    pid_t childWait;
+    pid_t myExec;
+    pid_t frtn = fork();
+    if(frtn == 0){
+        // child process
+        sleep(3);
+        myExec = execvp(node->command, myArgv);
+        exit(myExec);
+    } else if (frtn > 0){
+        childWait = waitpid(myExec, &status, 0);
+        // parent process
+    }
     while(tmp != NULL){
         printf("argument is: %s\n", tmp->command);
         tmp = tmp->next;
@@ -136,7 +162,6 @@ int main (int argc, char * argv[]){
                 case WORD:
                     if(beginningOfCommand == true){
                         node->command = strdup(lexeme);
-                        printf(":--: %s\n", lexeme);
                         beginningOfCommand = false;
                         rdIn = false;
                         rdOut = false;
@@ -144,7 +169,6 @@ int main (int argc, char * argv[]){
                         rdDefined = true;
                     } else {
                         push(&node, lexeme);
-                        printf(" --: %s\n", lexeme);
                         rdDefined = true;
                     }
                     break;
@@ -154,14 +178,12 @@ int main (int argc, char * argv[]){
                 case SYSTEM_ERROR:
                     exit(42);
                 default:
-                    printf("my rd is: %s\n", tokens[rtn %96]);
                     // if it is a pipe character
                     if (strcmp(tokens[rtn %96], "PIPE") == 0){
                         if(beginningOfCommand == true){
                             break;
                             myError = true;
                         }
-                        printf(" |\n");
                         beginningOfCommand = true;
                         rdIn = false;
                         rdOut = false;
@@ -170,7 +192,6 @@ int main (int argc, char * argv[]){
                     }
                     // if it is a semicolon character
                     else if(strcmp(tokens[rtn %96], "SEMICOLON") == 0){
-                        printf(" ;\n");
                         beginningOfCommand = true;
                         rdIn = false;
                         rdOut = false;
@@ -342,7 +363,7 @@ int main (int argc, char * argv[]){
                     // if it is an & character
                     else if (strcmp(tokens[rtn %96], "AMP") == 0){
                         rtn = parse_line(NULL);
-                        printf("my values are: %d, %s\n", rtn, tokens[rtn%96]);
+                        //printf("my values are: %d, %s\n", rtn, tokens[rtn%96]);
                         if(rtn == EOL){
                             node->background = true;
                         } else {
@@ -367,8 +388,9 @@ int main (int argc, char * argv[]){
             }
         }
         if(myError == false){
-            reverse(&node->arg_list);
-            Executer(node);
+            int count = 0;
+            count = reverse(&node->arg_list);
+            Executer(node, count);
         }
         //printList(node->arg_list);
 
