@@ -1,8 +1,8 @@
 ##########################
 # Makefile
 # Author: Kevin Littell
-# Date: Nov 15, 2018
-# COSC 3750, homework 8
+# Date: Dec 3, 2018
+# COSC 3750, homework 9
 # makes a program using the listed dependencies
 ##########################
 

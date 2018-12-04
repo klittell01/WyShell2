@@ -1,8 +1,8 @@
 /*
  * wyshell.c
  * Author: Kevin Littell
- * Date: 11-15-2018
- * COSC 3750, program 8
+ * Date: 12-03-2018
+ * COSC 3750, program 9
  * simple shell utility
  */
 
@@ -40,17 +40,17 @@ char *tokens[]={ "QUOTE_ERROR", "ERROR_CHAR", "SYSTEM_ERROR",
 static int reverse(struct Node** headRef)
 {
     int count = 0;
+    int nodeCount = 0;
     struct Word* prev   = NULL;
     struct Word* current = (*headRef)->arg_list;
     struct Word* next = NULL;
 
     struct Node* nodeCurrent = *headRef;
-    printf("node current is %p\n", nodeCurrent);
     struct Node* nodePrev = NULL;
     struct Node* nodeNext = NULL;
-
+    // loop through all the command nodes so we can reverse all the arg list
     do{
-        printf("first\n");
+        nodeCount++;
         while (current != NULL){
             count++;
             // Store next
@@ -63,27 +63,21 @@ static int reverse(struct Node** headRef)
             prev = current;
             current = next;
         }
-
-        printf("second\n");
         nodeCurrent->count = count;
+        count = 0;
         nodeNext = nodeCurrent->next;
-        printf("node next is %p\n", nodeNext);
-        printf("third\n");
         nodeCurrent->arg_list = prev;
         prev = NULL;
-        printList(nodeCurrent->arg_list);
         if(nodeNext != NULL){
             nodeCurrent = nodeNext;
         } else {
-            return count;
+            return nodeCount;
         }
-        printf("fourth\n");
         current = nodeCurrent->arg_list;
-        printf("fifth\n");
     } while(nodeCurrent != NULL);
 
     //(*headRef)->arg_list = prev;
-    return count;
+    return nodeCount;
 }
 
 /* Function to push a node */
@@ -108,53 +102,54 @@ void printList(struct Word *head)
   printf("\n");
 }
 
-void Executer(struct Node * node){
-    int count = node->count;
-    char ** myArgv;
-    myArgv = calloc((count + 2), sizeof(char*));
-    myArgv[0] = strdup(node->command);
-    struct Word *tmp = node->arg_list;
-    for(int i = 0; i < count; i++){
-        myArgv[i + 1] = strdup(tmp->command);
-        tmp = tmp->next;
-    }
-    int status;
-    pid_t childWait;
-    pid_t myExec;
-    pid_t frtn = fork();
-    if(frtn == 0){
-        // child process
-        //sleep(2);
-        myExec = execvp(node->command, myArgv);
-        if(myExec == -1){
-            printf("%s: command not found\n",node->command);
+// pass a pointer to the head of our command nodes and this executes
+// builds the argument list for each command and processes them.
+void Executer(struct Node * node, int nodeCount){
+    int count = 0;
+    struct Node * myNode = (struct Node*) calloc(1, sizeof(struct Node));
+    myNode = node;
+    while(count < nodeCount){
+        count++;
+
+        // build argument list for each command
+        int argCount = myNode->count;
+        char ** myArgv;
+        myArgv = calloc((argCount + 2), sizeof(char*));
+        myArgv[0] = strdup(myNode->command);
+        struct Word *tmp = myNode->arg_list;
+        for(int i = 0; i < argCount; i++){
+            myArgv[i + 1] = strdup(tmp->command);
+            tmp = tmp->next;
         }
-        //exit(frtn);
-    } else if (frtn > 0){
-        if(node->background == true){
-            childWait = waitpid(frtn, &status, WNOHANG);
-            if(childWait == -1){
-                perror("waitpid");
+
+        // begin executing and forking
+        int status;
+        pid_t childWait;
+        pid_t myExec;
+        pid_t frtn = fork();
+        if(frtn == 0){
+            // child process
+            //sleep(2);
+            myExec = execvp(myNode->command, myArgv);
+            myArgv = NULL;
+            if(myExec == -1){
+                printf("%s: command not found\n",myNode->command);
             }
-        } else {
-            childWait = waitpid(frtn, &status, 0);
+            //exit(frtn);
+        } else if (frtn > 0){
+            if(myNode->background == true){
+                childWait = waitpid(frtn, &status, WNOHANG);
+                if(childWait == -1){
+                    perror("waitpid");
+                }
+            } else {
+                childWait = waitpid(frtn, &status, 0);
+            }
+            // parent process
+        } else if(frtn == -1){
+            perror("fork");
         }
-        // parent process
-    } else if(frtn == -1){
-        perror("fork");
-    }
-    while(tmp != NULL){
-        printf("argument is: %s\n", tmp->command);
-        tmp = tmp->next;
-    }
-    if(node->outFile != NULL){
-        printf("output file is: %s\n",node->outFile);
-    }
-    if(node->inFile != NULL){
-        printf("input file is: %s\n",node->inFile);
-    }
-    if(node->errFile != NULL){
-        printf("error file is: %s\n",node->errFile);
+        myNode = myNode->next; // increment our node pointer
     }
 }
 
@@ -172,7 +167,7 @@ int main (int argc, char * argv[]){
         }
         rtn = parse_line(buf);
         if(rtn == EOL){
-            printf("not a valid input\n");
+            printf("Error: not a valid input\n");
             continue;
         }
 
@@ -190,6 +185,7 @@ int main (int argc, char * argv[]){
                 case WORD:
                     if(beginningOfCommand == true){
                         node->command = strdup(lexeme);
+                        node->count = 0;
                         beginningOfCommand = false;
                         rdIn = false;
                         rdOut = false;
@@ -201,7 +197,7 @@ int main (int argc, char * argv[]){
                     }
                     break;
                 case ERROR_CHAR:
-                    printf("error char\n" );
+                    printf("Error: character error\n" );
                     break;
                 case SYSTEM_ERROR:
                     exit(42);
@@ -212,14 +208,15 @@ int main (int argc, char * argv[]){
                             break;
                             myError = true;
                         }
-                        struct Node *newNode = (struct Node*) calloc(1, sizeof(struct Node));
+                        struct Node *newNode =
+                            (struct Node*) calloc(1, sizeof(struct Node));
                         newNode->prev = node;
 
                         //assign the input file
                         if(node->inFile == NULL ){
                             newNode->inFile = strdup(node->command);
                         } else {
-                            printf("Redirection error\n");
+                            printf("Error: Redirection error\n");
                         }
 
                         // assign the output file
@@ -230,12 +227,12 @@ int main (int argc, char * argv[]){
                                 node->outFile = strdup(lexeme);
                                 newNode->command = strdup(lexeme);
                             } else {
-                                printf("Ambiguous redirection\n");
+                                printf("Error: Ambiguous redirection\n");
                                 myError = true;
                                 break;
                             }
                         } else {
-                            printf("Redirection error\n");
+                            printf("Error: Redirection error\n");
                         }
                         // assign the next pointer to the last node
                         node->next = newNode;
@@ -248,17 +245,29 @@ int main (int argc, char * argv[]){
                     }
                     // if it is a semicolon character
                     else if(strcmp(tokens[rtn %96], "SEMICOLON") == 0){
-                        beginningOfCommand = true;
+                        struct Node *newNode =
+                            (struct Node*) calloc(1, sizeof(struct Node));
+
+                        rtn = parse_line(NULL);
+                        if(rtn != EOL){
+                            newNode->command = strdup(lexeme);
+                            // assign the next pointer to the last node
+                            node->next = newNode;
+                            node = newNode;
+                        } else {
+                            break;
+                        }
+                        beginningOfCommand = false;
                         rdIn = false;
                         rdOut = false;
                         rdErr = false;
-                        rdDefined = false;
+                        rdDefined = true;
                     }
                     // if it is a > character
                     else if(strcmp(tokens[rtn %96], "REDIR_OUT") == 0){
                         if(beginningOfCommand == true){
                             myError = true;
-                            printf("Ambiguous redirection\n");
+                            printf("Error: Ambiguous redirection\n");
                             break;
                         }
                         if(node->outFile == NULL){
@@ -267,13 +276,13 @@ int main (int argc, char * argv[]){
                             if(rtn != EOL){
                                 node->outFile = strdup(lexeme);
                             } else {
-                                printf("Ambiguous redirection\n");
+                                printf("Error: Ambiguous redirection\n");
                                 myError = true;
                                 break;
                             }
                         } else {
                             //if there is more than one attempt to redirect out
-                            printf("Ambiguous redirection\n");
+                            printf("Error: Ambiguous redirection\n");
                             myError = true;
                             break;
                         }
@@ -284,7 +293,7 @@ int main (int argc, char * argv[]){
                     else if(strcmp(tokens[rtn %96], "REDIR_IN") == 0){
                         if(beginningOfCommand == true){
                             myError = true;
-                            printf("Ambiguous redirection\n");
+                            printf("Error: Ambiguous redirection\n");
                             break;
                         }
                         if(node->inFile == NULL){
@@ -293,13 +302,13 @@ int main (int argc, char * argv[]){
                             if(rtn != EOL){
                                 node->inFile = strdup(lexeme);
                             } else {
-                                printf("Ambiguous redirection\n");
+                                printf("Error: Ambiguous redirection\n");
                                 myError = true;
                                 break;
                             }
                         } else {
                             //if there is more than one attempt to redirect in
-                            printf("Ambiguous redirection\n");
+                            printf("Error: Ambiguous redirection\n");
                             myError = true;
                             break;
                         }
@@ -310,7 +319,7 @@ int main (int argc, char * argv[]){
                      else if(strcmp(tokens[rtn %96], "REDIR_ERR_OUT") == 0){
                         if(beginningOfCommand == true){
                             myError = true;
-                            printf("Ambiguous redirection\n");
+                            printf("Error: Ambiguous redirection\n");
                             break;
                         }
                         if(node->errFile == NULL){
@@ -319,13 +328,13 @@ int main (int argc, char * argv[]){
                             if(rtn != EOL){
                                 node->errFile = strdup(lexeme);
                             } else {
-                                printf("Ambiguous redirection\n");
+                                printf("Error: Ambiguous redirection\n");
                                 myError = true;
                                 break;
                             }
                         } else {
                             //if there is more than one attempt to redirect err
-                            printf("Ambiguous redirection\n");
+                            printf("Error: Ambiguous redirection\n");
                             myError = true;
                             break;
                         }
@@ -336,7 +345,7 @@ int main (int argc, char * argv[]){
                      else if(strcmp(tokens[rtn %96], "APPEND_OUT") == 0){
                         if(beginningOfCommand == true){
                             myError = true;
-                            printf("Ambiguous redirection\n");
+                            printf("Error: Ambiguous redirection\n");
                             break;
                         }
                         if(node->outFile == NULL){
@@ -345,13 +354,13 @@ int main (int argc, char * argv[]){
                             if(rtn != EOL){
                                 node->outFile = strdup(lexeme);
                             } else {
-                                printf("Ambiguous redirection\n");
+                                printf("Error: Ambiguous redirection\n");
                                 myError = true;
                                 break;
                             }
                         } else {
                             //if there is more than one attempt to redirect out
-                            printf("Ambiguous redirection\n");
+                            printf("Error: Ambiguous redirection\n");
                             myError = true;
                             break;
                         }
@@ -362,7 +371,7 @@ int main (int argc, char * argv[]){
                     else if(strcmp(tokens[rtn %96], "APPEND_ERR") == 0){
                         if(beginningOfCommand == true){
                             myError = true;
-                            printf("Ambiguous redirection\n");
+                            printf("Error: Ambiguous redirection\n");
                             break;
                         }
                         if(node->errFile == NULL){
@@ -371,13 +380,13 @@ int main (int argc, char * argv[]){
                             if(rtn != EOL){
                                 node->errFile = strdup(lexeme);
                             } else {
-                                printf("Ambiguous redirection\n");
+                                printf("Error: Ambiguous redirection\n");
                                 myError = true;
                                 break;
                             }
                         } else {
                             //if there is more than one attempt to redirect err
-                            printf("Ambiguous redirection\n");
+                            printf("Error: Ambiguous redirection\n");
                             myError = true;
                             break;
                         }
@@ -388,7 +397,7 @@ int main (int argc, char * argv[]){
                     else if(strcmp(tokens[rtn %96], "REDIR_ERR") == 0){
                         if(beginningOfCommand == true){
                             myError = true;
-                            printf("Ambiguous redirection\n");
+                            printf("Error: Ambiguous redirection\n");
                             break;
                         }
                         if(node->errFile == NULL){
@@ -397,13 +406,13 @@ int main (int argc, char * argv[]){
                             if(rtn != EOL){
                                 node->errFile = strdup(lexeme);
                             } else {
-                                printf("Ambiguous redirection\n");
+                                printf("Error: Ambiguous redirection\n");
                                 myError = true;
                                 break;
                             }
                         } else {
                             //if there is more than one attempt to redirect err
-                            printf("Ambiguous redirection\n");
+                            printf("Error: Ambiguous redirection\n");
                             myError = true;
                             break;
                         }
@@ -412,7 +421,7 @@ int main (int argc, char * argv[]){
                     }
                     // if it is only an opening quote with no close
                     else if (strcmp(tokens[rtn %96], "QUOTE_ERROR") == 0){
-                        printf("unmatched quote.\n");
+                        printf("Error: unmatched quote\n");
                         myError = true;
                         break;
                     }
@@ -439,16 +448,16 @@ int main (int argc, char * argv[]){
             }
             if(rtn == EOL){
                 if(rdDefined == false){
-                    printf("No file defined for redirection\n");
+                    printf("Error: No file defined for redirection\n");
                     myError = true;
                     break;
                 }
             }
         }
         if(myError == false){
-            int count = 0;
-            count = reverse(&head);
-            Executer(head);
+            int nodeCount = 0;
+            nodeCount = reverse(&head);
+            Executer(head, nodeCount);
         }
         //printList(node->arg_list);
 
